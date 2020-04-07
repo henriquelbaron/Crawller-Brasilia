@@ -23,10 +23,10 @@ class RoboBrasilia():
 
     def __init__(self):
         options = Options()
-        options.headless = True
+        # options.headless = True
         driver = webdriver.Firefox(options=options)
         workbook = xlrd.open_workbook(
-            '/home/henrique/Planilhas/fazendaBrasilia2.xls')
+            '/home/henrique/Downloads/iptu.xls')
         worksheet = workbook.sheet_by_index(0)
         imovels = []
 
@@ -63,13 +63,15 @@ class RoboBrasilia():
                                         driver.find_element_by_xpath("//button[text()='Confirmar']").click()
                                     wait.until(cond.new_window_is_opened)
                                     driver.switch_to.window(driver.window_handles[1])
-                                    wait.until(
-                                        cond.text_to_be_present_in_element(
-                                            (By.XPATH, '//*[@id="htmlDar"]/div/button/strong'),
-                                            'Imprimir'), cond.text_to_be_present_in_element(
+                                    wait.until(cond.text_to_be_present_in_element(
                                             (By.XPATH, '//*[@id="htmlDar"]/div/button/strong'),
                                             'Imprimir'))
+                                    wait.until(cond.invisibility_of_element_located((By.XPATH,
+                                                                                     '//*[contains(@class,"mat-progress-spinner-indeterminate-animation")]')))
                                     self.extrair_dados(driver, imovel)
+                                except Exception as py_ex:
+                                    logging.error(py_ex)
+                                    logging.error(py_ex.args)
                                 finally:
                                     driver.close()
                                     driver.switch_to.window(aba_atual)
@@ -103,53 +105,32 @@ class RoboBrasilia():
             try:
                 workbook = xlwt.Workbook()
                 worksheet = workbook.add_sheet(u'Resultado')
-                worksheet.write(0, 0, 'codImovel')
-                worksheet.write(0, 1, 'inscricao')
-                worksheet.write(0, 2, 'status')
-                worksheet.write(0, 3, 'Nome ou Razão Social')
-                worksheet.write(0, 4, 'CPF/CNPJ')
-                worksheet.write(0, 5, 'Endereço')
-                worksheet.write(0, 6, 'Vencimento')
-                worksheet.write(0, 7, 'Cod. Barras')
-                worksheet.write(0, 8, 'Cod Receita')
-                worksheet.write(0, 9, 'Cota ou Refer')
-                worksheet.write(0, 10, 'Exercício')
-                worksheet.write(0, 11, 'Valor')
-                worksheet.write(0, 12, 'Multa')
-                worksheet.write(0, 13, 'Juros')
-                worksheet.write(0, 14, 'Outros')
-                worksheet.write(0, 15, 'Valor Total')
-                worksheet.write(0, 16, 'Tributo')
+                cabecalhoFatura = ['Nome ou Razão Social',
+                                   'CPF/CNPJ', 'Endereço', 'Vencimento', 'Cod. Barras', 'Cod Receita',
+                                   'Cota ou Refer', 'Exercício', 'Valor', 'Multa', 'Juros', 'Outros', 'Valor Total',
+                                   'Tributo']
+                cabecalhoImovel = ['codigoImovel', 'numeroContrato', 'inscricao', 'status']
+                for i, val in enumerate(cabecalhoImovel + cabecalhoFatura):
+                    worksheet.write(0, i, val)
+
+
                 novaLinha = 1;
                 for imovel in imovels:
-                    if imovel['faturas'] is None:
-                        worksheet.write(novaLinha, 0, imovel['codImovel'])
-                        worksheet.write(novaLinha, 2, imovel['inscricao'])
-                        worksheet.write(novaLinha, 3, imovel['status'])
+                    if ('NUMERO DA INSCRICAO DE IMOVEL INCORRETO' == imovel['status'] or imovel['faturas'] is None):
+                        for i, val in enumerate(cabecalhoImovel):
+                            worksheet.write(novaLinha, i, imovel[val])
                         novaLinha += 1
                     else:
                         for fatura in imovel['faturas']:
-                            worksheet.write(novaLinha, 0, imovel['codImovel'])
-                            worksheet.write(novaLinha, 1, imovel['inscricao'])
-                            worksheet.write(novaLinha, 2, imovel['status'])
-                            worksheet.write(novaLinha, 3, fatura['Nome ou Razão Social'])
-                            worksheet.write(novaLinha, 4, fatura['CPF/CNPJ'])
-                            worksheet.write(novaLinha, 5, fatura['Endereço'])
-                            worksheet.write(novaLinha, 6, fatura['Vencimento'])
-                            worksheet.write(novaLinha, 7, fatura['Cod. Barras'])
-                            worksheet.write(novaLinha, 8, fatura['Cod Receita'])
-                            worksheet.write(novaLinha, 9, fatura['Cota ou Refer'])
-                            worksheet.write(novaLinha, 10, fatura['Exercício'])
-                            worksheet.write(novaLinha, 11, fatura['Valor'])
-                            worksheet.write(novaLinha, 12, fatura['Multa'])
-                            worksheet.write(novaLinha, 13, fatura['Juros'])
-                            worksheet.write(novaLinha, 14, fatura['Outros'])
-                            worksheet.write(novaLinha, 15, fatura['Valor Total'])
-                            worksheet.write(novaLinha, 16,
-                                            '/'.join([*fatura['Tributo']]))
+                            for i, val in enumerate(cabecalhoImovel):
+                                worksheet.write(novaLinha, i, imovel[val])
+                            for i, val in enumerate(cabecalhoFatura):
+                                worksheet.write(novaLinha, i + 4, fatura[val])
                             novaLinha += 1
                 workbook.save(self.path + '/resultado.xls')
-            except IOError:
+            except IOError as e:
+                logging.error(e)
+                logging.error(e.args)
                 print("I/O error")
 
     def extrair_dados(self, driver, imovel):
@@ -174,9 +155,8 @@ class RoboBrasilia():
             tributos['IPTU'] = self.find('VLR IPTU: (.+?)\\n', text, 1)
         if self.find('VLR TLP : (.+?)\\n', text, 1) != None:
             tributos['LIXO'] = self.find('VLR TLP : (.+?)\\n', text, 1)
-
-        fatura['Tributo'] = tributos
-        file_name = '{}_{}_{}.pdf'.format(imovel['codImovel'], imovel['inscricao'],
+        fatura['Tributo'] = '/'.join([*tributos])
+        file_name = '{}_{}_{}.pdf'.format(imovel['codigoImovel'], imovel['inscricao'],
                                           fatura['Cota ou Refer'])
         file_name = re.sub(r"/", "-", file_name)
         self.gera_pdf(driver, file_name)
