@@ -14,6 +14,8 @@ from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.support import expected_conditions as cond
 from selenium.webdriver.support.ui import WebDriverWait
 
+from Connection import Connection
+
 
 class RoboBrasilia():
     path = '/home/files/BRASILIA/{}/{}/'.format(datetime.now().strftime('%d_%m_%y'),
@@ -26,10 +28,10 @@ class RoboBrasilia():
         # options.headless = True
         driver = webdriver.Firefox(options=options)
         workbook = xlrd.open_workbook(
-            '/home/henrique/Downloads/iptu.xls')
+            '/home/henrique/Planilhas/fazendaBrasilia2.xls')
         worksheet = workbook.sheet_by_index(0)
         imovels = []
-
+        con = Connection('localhost','imob','postgres','P2a3u0l9')
         keys = [v.value for v in worksheet.row(0)]
         for row_number in range(worksheet.nrows):
             if row_number == 0:
@@ -37,6 +39,7 @@ class RoboBrasilia():
             row_data = {}
             for col_number, cell in enumerate(worksheet.row(row_number)):
                 row_data[keys[col_number]] = str(cell.value).replace('.0', '')
+            con.insertParametro(row_data)
             imovels.append(row_data)
         quantidade_imovels = len(imovels)
         logging.info(str(quantidade_imovels) + " Imoveis para processamento")

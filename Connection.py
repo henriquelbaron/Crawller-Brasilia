@@ -35,3 +35,19 @@ class Connection(object):
 
     def fechar(self):
         self._db.close()
+
+    def insertParametro(self,imovel):
+        sqlImovel = """INSERT INTO imovel (inscricao)VALUES (%s) RETURNING id;"""
+        sqlParametro= """INSERT INTO parametro (codigoImovel,id_imovel, id_imobiliaria) VALUES(%s,%s,%s)"""
+        id_imovel = None
+        try:
+            cur = self._db.cursor()
+            cur.execute(sqlImovel, (imovel['inscricao'],))
+            id_imovel = cur.fetchone()[0]
+            cur.execute(sqlParametro, (imovel['codImovel'],id_imovel,1))
+            self._db.commit()
+            cur.close()
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._db.rollback()
+            print(error)
+        return id_imovel
