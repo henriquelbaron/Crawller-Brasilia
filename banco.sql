@@ -4,12 +4,18 @@ create table imovel(
 	PRIMARY KEY(id)
 );
 
+CREATE INDEX index_imovel
+ON imovel (inscricao);
+
 create table imobiliaria(
 	id SERIAL,
 	nome varchar(100) NOT NULL,
-	cnpj char(14) NOT NULL,
+	cnpj char(14) NOT NULL UNIQUE,
 	PRIMARY KEY(id)
 );
+
+CREATE INDEX index_cnpj
+ON imobiliaria (cnpj);
 
 create table parametro(
     id SERIAL,
@@ -21,13 +27,14 @@ create table parametro(
 	FOREIGN KEY (id_imovel) REFERENCES imovel (id),
     FOREIGN KEY (id_imobiliaria) REFERENCES imobiliaria (id)
 );
-
+CREATE TYPE estado AS ENUM ('PROCESSADO', 'REPROCESSAR', 'PROCESSANDO');
 create table consulta(
 	id SERIAL,
 	consultado TIMESTAMP NOT NULL,
-    id_imob_imovel INTEGER,
+	estado estado,
+    parametro INTEGER,
     PRIMARY KEY(id),
-	FOREIGN KEY (id_imob_imovel) REFERENCES parametro(id),
+	FOREIGN KEY (parametro) REFERENCES parametro(id)
 );
 
 create table fatura(
@@ -48,8 +55,15 @@ create table fatura(
 	desconto numeric(10,2),
 	outros numeric(10,2),
 	valorCobrado numeric(10,2),
+	numeroDocumento varchar(30),
+	numeroDam varchar(20),
+	agencia varchar(10),
+	nossoNumero varchar(30),
+	codigoBeneficiario varchar(10),
+
 	PRIMARY KEY(id),
     FOREIGN KEY (id_consulta) REFERENCES consulta (id)
 );
 
 
+INSERT INTO imobiliaria (nome,cnpj) values ('Projeta','00000000000000');

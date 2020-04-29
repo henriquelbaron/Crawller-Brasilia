@@ -36,9 +36,10 @@ class Connection(object):
     def fechar(self):
         self._db.close()
 
-    def insertParametro(self,imovel):
+    def insertParametro(self,imovel,imob):
         sqlImovel = """INSERT INTO imovel (inscricao)VALUES (%s) RETURNING id;"""
         sqlParametro= """INSERT INTO parametro (codigoImovel,id_imovel, id_imobiliaria) VALUES(%s,%s,%s)"""
+        sqlFatura = """"INSERT INTO  consulta """
         id_imovel = None
         try:
             cur = self._db.cursor()

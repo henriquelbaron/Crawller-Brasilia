@@ -7,6 +7,7 @@ from io import BytesIO
 
 import xlrd
 import xlwt
+import token
 from PIL import Image
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -14,24 +15,25 @@ from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.support import expected_conditions as cond
 from selenium.webdriver.support.ui import WebDriverWait
 
-from Connection import Connection
+from dao.Connection import Connection
+from imagetyperzapi3.imagetyperzapi import ImageTyperzAPI
 
 
 class RoboBrasilia():
     path = '/home/files/BRASILIA/{}/{}/'.format(datetime.now().strftime('%d_%m_%y'),
                                                 datetime.now().strftime('%H%M%S%f'))
-    logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S', filename='brasilia.log',
-                        level=logging.INFO)
+    planilha = '/home/henrique/Planilhas/fazendaBrasilia2.xls'
+    consultar_anos_anteriores = True
+    log = logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%d/%m/%Y %H:%M:%S',
+                              filename='brasilia.log',
+                              level=logging.INFO)
 
     def __init__(self):
-        options = Options()
-        # options.headless = True
-        driver = webdriver.Firefox(options=options)
-        workbook = xlrd.open_workbook(
-            '/home/henrique/Planilhas/fazendaBrasilia2.xls')
+
+        workbook = xlrd.open_workbook(self.planilha)
         worksheet = workbook.sheet_by_index(0)
         imovels = []
-        con = Connection('localhost','imob','postgres','P2a3u0l9')
+        # con = Connection('localhost','imob','postgres','P2a3u0l9')
         keys = [v.value for v in worksheet.row(0)]
         for row_number in range(worksheet.nrows):
             if row_number == 0:
@@ -39,17 +41,22 @@ class RoboBrasilia():
             row_data = {}
             for col_number, cell in enumerate(worksheet.row(row_number)):
                 row_data[keys[col_number]] = str(cell.value).replace('.0', '')
-            con.insertParametro(row_data)
+            # con.insertParametro(row_data, '00000000000000')
             imovels.append(row_data)
         quantidade_imovels = len(imovels)
         logging.info(str(quantidade_imovels) + " Imoveis para processamento")
         try:
-            contador = 1
+            self.captcha = ImageTyperzAPI(token.TOKEN)
+            print(self.captcha.account_balance())
+            options = Options()
+            # options.headless = True
+            driver = webdriver.Firefox(options=options)
+            contador = 0
             for imovel in imovels:
                 self.create_file(self.path + "/boletos")
                 try:
                     logging.info('Processando {} {} de {}'.format(imovel, contador, quantidade_imovels))
-                    if self.efetuar_login(driver, imovel['inscricao']):
+                    if self.efetuar_login(driver, imovel):
                         imovel['faturas'] = []
                         imovel['status'] = 'COM DÉBITO'
                         wait = WebDriverWait(driver, 10)
@@ -84,8 +91,6 @@ class RoboBrasilia():
                                 btn_next.click()
                             else:
                                 break
-                    else:
-                        imovel['status'] = 'NUMERO DA INSCRICAO DE IMOVEL INCORRETO'
                 except Exception as py_ex:
                     imovel['status'] = 'REPROCESSAR'
                     logging.error(py_ex)
@@ -115,7 +120,6 @@ class RoboBrasilia():
                 cabecalhoImovel = ['codigoImovel', 'numeroContrato', 'inscricao', 'status']
                 for i, val in enumerate(cabecalhoImovel + cabecalhoFatura):
                     worksheet.write(0, i, val)
-
 
                 novaLinha = 1;
                 for imovel in imovels:
@@ -150,7 +154,7 @@ class RoboBrasilia():
         fatura['Juros'] = self.find('Juros - R\\$ (.+?)\\n', text, 1)
         fatura['Outros'] = self.find('Outros - R\\$ (.+?)\\n', text, 1)
         fatura['Valor Total'] = self.find('Valor Total - R\\$ (.+?)\\n', text, 1)
-        fatura['Cod. Barras'] = self.find('\\n(.+?)\\n01.CF/DF', text, 1)
+        fatura['Cod. Barras'] = self.find('\\n(.+?)\\n01.CF/DF', text, 1).replace(' ', '')
         fatura['Nome ou Razão Social'] = self.find('Razão Social\\n(.+?)\\n', text, 1)
         fatura['Endereço'] = self.find('Endereço\n(.+?)\\n', text, 1)
         tributos = {}
@@ -172,14 +176,23 @@ class RoboBrasilia():
         rgb.paste(img, mask=img.split()[3])
         rgb.save(self.path + "/boletos/" + file_name, "PDF", quality=100)
 
-    def efetuar_login(self, driver, inscicao):
+    def efetuar_login(self, driver, imovel):
         driver.get("https://ww1.receita.fazenda.df.gov.br/emissao-segunda-via/iptu")
         inscricao_input = driver.find_element_by_id('mat-input-0')
-        inscricao_input.send_keys(inscicao)
+        inscricao_input.send_keys(imovel['inscricao'])
+        if self.consultar_anos_anteriores:
+            driver.find_element_by_id('exercicio').click()
+            driver.find_element_by_id('mat-option-1').click()
+        self.resolve_captcha(driver)
         consultar_btn = driver.find_element_by_xpath("//button[@color='primary']")
         consultar_btn.click()
+        time.sleep(3)
         try:
-            driver.find_element_by_xpath('//*[contains(@class ,"alert-info")]')
+            mensagem = driver.find_element_by_xpath('//*[contains(@class ,"alert-info")]|//*[contains(@id ,"mat-error")]').text
+            if 'NAO EXISTEM DEBITOS PARA ESSE IMOVEL' in mensagem:
+                imovel['status'] = 'NÃO POSSUI DÉBITOS'
+            else :
+                imovel['status'] = 'NUMERO DA INSCRICAO DE IMOVEL INCORRETO'
             return False
         except:
             return True
@@ -196,5 +209,39 @@ class RoboBrasilia():
         except Exception as e:
             return None
 
+    def resolve_captcha(self, driver):
+        data = {
+            'page_url': 'https://ww1.receita.fazenda.df.gov.br/emissao-segunda-via/iptu',
+            'sitekey': '6LfqGcIUAAAAAL_iFUaRq21hMxF9-AyZst-UQ9ly',
+            'type': 2
+        }
+        captcha_id = self.captcha.submit_recaptcha(data)
+
+        contador = 0
+        while self.captcha.in_progress(captcha_id):
+            time.sleep(10)
+            contador += 10
+            logging.info('{}s Esperando Recaptcha'.format(contador))
+
+        recaptcha_response = self.captcha.retrieve_recaptcha(captcha_id)
+        print('Recaptcha response: {}'.format(recaptcha_response))
+
+        query = "document.getElementById('recaptcha-token').innerHTML = '{}';".format(recaptcha_response)
+        query2 = "document.getElementById('g-recaptcha-response').innerHTML = '{}';".format(recaptcha_response)
+
+        driver.execute_script(query2)
+
+        driver.switch_to.frame(driver.find_element_by_xpath('//iframe'))
+        driver.execute_script(query)
+        driver.find_element_by_xpath("//span[@id='recaptcha-anchor']").click()
+        driver.switch_to.default_content()
+        time.sleep(3)
 
 robo = RoboBrasilia()
+
+# <span class="recaptcha-checkbox goog-inline-block recaptcha-checkbox-unchecked rc-anchor-checkbox recaptcha-checkbox-checked"
+# role="checkbox" aria-checked="true" id="recaptcha-anchor" dir="ltr" aria-labelledby="recaptcha-anchor-label" aria-disabled="false"
+# tabindex="0" style="overflow: visible;">
+# <span class="recaptcha-checkbox goog-inline-block recaptcha-checkbox-unchecked rc-anchor-checkbox"
+# role="checkbox" aria-checked="false" id="recaptcha-anchor"
+# tabindex="0" dir="ltr" aria-labelledby="recaptcha-anchor-label">

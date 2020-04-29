@@ -1,0 +1,2 @@
+class Imovel(object):
+    pass
